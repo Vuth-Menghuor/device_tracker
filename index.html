@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Device Location Tracker</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <h2>Device GPS Tracker</h2>
+
+    <div>
+      <button onclick="addAllDevices()">Get All Devices</button>
+      <button onclick="exportAllToCSV()">Export All to CSV</button>
+      <div style="margin-top: 10px">
+        <input
+          type="text"
+          id="coordInput"
+          placeholder="Latitude, Longitude"
+          style="width: 200px"
+        />
+        <button onclick="addCoordinatesFromSingleInput()">
+          Add Coordinates
+        </button>
+      </div>
+      <div id="loader">Fetching device data...</div>
+    </div>
+
+    <table id="deviceTable">
+      <thead>
+        <tr>
+          <th>Coordinates</th>
+          <th>Village (Phum)</th>
+          <th>Commune (Khum)</th>
+          <th>District (Srok)</th>
+          <th>City/Province</th>
+          <th>Full Address</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <script>
+      const devices = [];
+
+      const mockDevices = [
+        { lat: 12.054140555556, lng: 105.15349055556 },
+        { lat: 12.054871111111, lng: 105.162565 },
+        { lat: 11.545833333333, lng: 104.89939333333 },
+        { lat: 11.590175, lng: 104.88211333333 },
+        { lat: 11.599270555556, lng: 104.91861166667 },
+        { lat: 11.896451111111, lng: 106.33732277778 },
+        { lat: 11.462361111111, lng: 104.95522166667 },
+        { lat: 10.489267222222, lng: 104.29446111111 },
+        { lat: 11.596908, lng: 104.914567 },
+        { lat: 11.565896111111, lng: 104.91824166667 },
+        { lat: 10.615309444444, lng: 103.49840388889 },
+      ];
+
+      async function addCoordinatesFromSingleInput() {
+        const coordStr = document.getElementById("coordInput").value.trim();
+
+        // Basic validation for the format "lat, lng"
+        const parts = coordStr.split(",").map((s) => s.trim());
+
+        if (parts.length !== 2) {
+          alert("Please enter coordinates in 'latitude, longitude' format.");
+          return;
+        }
+
+        const lat = parseFloat(parts[0]);
+        const lng = parseFloat(parts[1]);
+
+        if (isNaN(lat) || isNaN(lng)) {
+          alert("Please enter valid numbers for latitude and longitude.");
+          return;
+        }
+
+        document.getElementById("loader").style.display = "block";
+
+        const result = await getDetailedAddress(lat, lng);
+
+        devices.push({
+          lat,
+          lng,
+          timestamp: new Date().toLocaleString(),
+          ...result,
+        });
+
+        renderTable();
+        document.getElementById("loader").style.display = "none";
+
+        // Clear input field
+        document.getElementById("coordInput").value = "";
+      }
+
+      // Add all mock devices
+      async function addAllDevices() {
+        document.getElementById("loader").style.display = "block";
+        devices.length = 0;
+
+        const addressPromises = mockDevices.map((device) =>
+          getDetailedAddress(device.lat, device.lng)
+        );
+
+        const results = await Promise.all(addressPromises);
+
+        for (let i = 0; i < results.length; i++) {
+          devices.push({
+            ...mockDevices[i],
+            timestamp: new Date().toLocaleString(),
+            ...results[i],
+          });
+        }
+
+        renderTable();
+        document.getElementById("loader").style.display = "none";
+      }
+
+      // Fetch address details from Google Geocoding API
+      async function getDetailedAddress(lat, lng) {
+        try {
+          const response = await fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyCNLJoByCegi307pESD4Hd3EJ2TIiTwb7M`
+          );
+          const data = await response.json();
+          const result = data.results[0];
+
+          if (!result)
+            return {
+              address: "Unknown",
+              phum: "",
+              khum: "",
+              srok: "",
+              city: "",
+            };
+
+          const components = result.address_components;
+          const getComp = (type) =>
+            components.find((c) => c.types.includes(type))?.long_name || "";
+
+          return {
+            address: result.formatted_address,
+            phum: getComp("sublocality") || getComp("neighborhood"),
+            khum: getComp("administrative_area_level_3"),
+            srok: getComp("administrative_area_level_2"),
+            city: getComp("administrative_area_level_1"),
+          };
+        } catch (error) {
+          console.error("Geocode error:", error);
+          return { address: "Error", phum: "", khum: "", srok: "", city: "" };
+        }
+      }
+
+      // Render table rows
+      function renderTable() {
+        const tbody = document.querySelector("#deviceTable tbody");
+        tbody.innerHTML = "";
+
+        devices.forEach((dev) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${dev.lat}, ${dev.lng}</td>
+            <td>${dev.phum}</td>
+            <td>${dev.khum}</td>
+            <td>${dev.srok}</td>
+            <td>${dev.city}</td>
+            <td>${dev.address}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      }
+
+      // Export all devices data to CSV file
+      function exportAllToCSV() {
+        if (devices.length === 0) {
+          alert("No device data available.");
+          return;
+        }
+
+        let csv =
+          "Coordinates,Village (Phum),Commune (Khum),District (Srok),City/Province,Full Address,Timestamp\n";
+        devices.forEach((d) => {
+          csv += `"${d.lat}, ${d.lng}","${d.phum}","${d.khum}","${d.srok}","${d.city}","${d.address}","${d.timestamp}"\n`;
+        });
+
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "device_report.csv";
+        a.click();
+
+        URL.revokeObjectURL(url);
+      }
+    </script>
+  </body>
+</html>
