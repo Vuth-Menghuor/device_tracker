@@ -72,6 +72,20 @@ input[type="text"]:focus {
   outline: none;
   box-shadow: 0 0 4px rgba(0, 123, 255, 0.3);
 }
+.status-success {
+  color: green;
+  font-weight: bold;
+}
+
+.status-error {
+  color: red;
+  font-weight: bold;
+}
+
+.row-error {
+  background-color: #f8d7da; /* light red background */
+  color: #721c24; /* dark red text */
+}
 
 /* Responsive Design */
 @media (max-width: 768px) {
