@@ -3,11 +3,13 @@ body {
   font-family: Arial, sans-serif;
   padding: 20px;
   background: #f9f9f9;
+  color: #333;
 }
 
 h2 {
   text-align: center;
-  color: #333;
+  color: #2f6fed;
+  margin-bottom: 20px;
 }
 
 table {
@@ -15,7 +17,7 @@ table {
   border-collapse: collapse;
   margin-top: 20px;
   background: #fff;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
 th,
@@ -28,6 +30,7 @@ td {
 th {
   background-color: #2f6fed;
   color: white;
+  font-weight: 600;
 }
 
 tr:hover {
@@ -35,19 +38,37 @@ tr:hover {
 }
 
 button {
-  padding: 8px 14px;
-  margin: 5px;
+  padding: 10px 18px;
+  margin: 5px 5px 10px 0;
   background-color: #007bff;
   border: none;
   border-radius: 6px;
   color: white;
   font-size: 14px;
   cursor: pointer;
-  transition: background-color 0.3s ease;
+  transition: background-color 0.25s ease;
 }
 
 button:hover {
   background-color: #0056b3;
+}
+
+input[type="text"],
+input[type="file"] {
+  padding: 9px 14px;
+  margin: 5px 5px 10px 0;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+  width: 200px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+input[type="text"]:focus,
+input[type="file"]:focus {
+  border-color: #007bff;
+  outline: none;
+  box-shadow: 0 0 4px rgba(0, 123, 255, 0.3);
 }
 
 #loader {
@@ -57,21 +78,7 @@ button:hover {
   color: #555;
 }
 
-input[type="text"] {
-  padding: 8px 12px;
-  margin: 5px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  font-size: 14px;
-  width: 180px;
-  transition: border-color 0.3s ease;
-}
-
-input[type="text"]:focus {
-  border-color: grey;
-  outline: none;
-  box-shadow: 0 0 4px rgba(0, 123, 255, 0.3);
-}
+/* Status indicators */
 .status-success {
   color: green;
   font-weight: bold;
@@ -83,7 +90,7 @@ input[type="text"]:focus {
 }
 
 .row-error {
-  background-color: #f8d7da; /* light red background */
+  background-color: #f8d7da; /* light red */
   color: #721c24; /* dark red text */
 }
 
@@ -94,7 +101,7 @@ input[type="text"]:focus {
   }
 
   h2 {
-    font-size: 20px;
+    font-size: 22px;
   }
 
   table,
@@ -116,6 +123,7 @@ input[type="text"]:focus {
     border: 1px solid #ddd;
     padding: 10px;
     background-color: #fff;
+    border-radius: 8px;
   }
 
   td {
@@ -127,24 +135,21 @@ input[type="text"]:focus {
   }
 
   td::before {
+    content: attr(data-label);
     position: absolute;
     left: 10px;
     top: 12px;
     white-space: nowrap;
     font-weight: bold;
     color: #333;
-    content: attr(data-label);
     text-align: left;
   }
 
-  input[type="text"] {
-    width: 100%;
-    box-sizing: border-box;
-  }
-
+  input[type="text"],
+  input[type="file"],
   button {
     width: 100%;
     box-sizing: border-box;
-    margin: 10px 0;
+    margin-bottom: 10px;
   }
 }
