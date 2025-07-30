@@ -27,7 +27,7 @@
 
     <div>
       <button onclick="addAllDevices()">Get All Devices</button>
-      <button onclick="exportAllToCSV()">Export All to CSV</button>
+      <button onclick="exportAllToExcel()">Export All to Excel</button>
       <div style="margin-top: 10px">
         <input
           type="text"
@@ -304,33 +304,43 @@
         });
       }
 
-      function exportAllToCSV() {
+      function exportAllToExcel() {
         if (devices.length === 0) {
           alert("No device data available.");
           return;
         }
 
-        // Note: ID column is NOT included in CSV as requested
-        let csv =
-          "Coordinates,Village (Phum),Commune (Khum),District (Srok),City,Full Address,Status,Timestamp\n";
+        // Prepare data for Excel
+        const data = [
+          [
+            "Coordinates",
+            "Village (Phum)",
+            "Commune (Khum)",
+            "District (Srok)",
+            "City",
+            "Full Address",
+            "Status",
+            "Timestamp",
+          ],
+          ...devices.map((d) => [
+            `${d.lat}, ${d.lng}`,
+            d.phum || "N/A",
+            d.khum || "N/A",
+            d.srok || "N/A",
+            d.city || "N/A",
+            d.address || "N/A",
+            d.status,
+            d.timestamp,
+          ]),
+        ];
 
-        devices.forEach((d) => {
-          csv += `"${d.lat}, ${d.lng}","${d.phum || "N/A"}","${
-            d.khum || "N/A"
-          }","${d.srok || "N/A"}","${d.city || "N/A"}","${
-            d.address || "N/A"
-          }","${d.status}","${d.timestamp}"\n`;
-        });
+        // Create worksheet and workbook
+        const worksheet = XLSX.utils.aoa_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Device Data");
 
-        const blob = new Blob([csv], { type: "text/csv" });
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "device_report.csv";
-        a.click();
-
-        URL.revokeObjectURL(url);
+        // Export as .xlsx file
+        XLSX.writeFile(workbook, "device_report.xlsx");
       }
     </script>
   </body>
