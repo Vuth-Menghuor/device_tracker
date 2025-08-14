@@ -5,6 +5,7 @@
     <title>Device Location Tracker</title>
     <link rel="stylesheet" href="style.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <style>
       #loader {
         display: none;
@@ -19,6 +20,15 @@
       .status-error {
         color: red;
       }
+      .status-offline {
+        color: orange;
+      }
+      .status-online {
+        color: blue;
+      }
+      #deviceTable {
+        font-size: 12px;
+      }
     </style>
   </head>
 
@@ -26,8 +36,7 @@
     <h2>Device GPS Tracker</h2>
 
     <div>
-      <button onclick="addAllDevices()">Get All Devices</button>
-      <button onclick="exportAllToExcel()">Export All to Excel</button>
+      <button onclick="exportAllToCSV()">Export All to CSV</button>
       <div style="margin-top: 10px">
         <input
           type="text"
@@ -35,11 +44,17 @@
           placeholder="Latitude, Longitude"
           style="width: 200px"
         />
+        <input
+          type="text"
+          id="imeiInput"
+          placeholder="IMEI (optional)"
+          style="width: 150px; margin-left: 5px"
+        />
         <button onclick="addCoordinatesFromSingleInput()">
           Add Coordinates
         </button>
       </div>
-      <input type="file" id="fileUpload" accept=".xlsx" />
+      <input type="file" id="fileUpload" accept=".xlsx,.csv" />
       <button onclick="handleFileUpload()">Upload and Convert</button>
 
       <div id="loader">Fetching device data...</div>
@@ -50,43 +65,41 @@
       border="1"
       cellspacing="0"
       cellpadding="5"
-      style="margin-top: 10px"
+      style="margin-top: 10px; width: 100%"
     >
       <thead>
         <tr>
           <th>ID</th>
+          <th>IMEI</th>
           <th>Coordinates</th>
+          <th>Data Status</th>
+          <th>Data Status Description</th>
           <th>Village</th>
           <th>Commune</th>
           <th>District</th>
           <th>City / Province</th>
-          <th>Full Address</th>
-          <th>Status</th>
+          <th>Geocode Status</th>
         </tr>
       </thead>
+
       <tbody></tbody>
     </table>
 
     <script>
-      const mockDevices = [
-        { lat: 12.054140555556, lng: 105.15349055556 },
-        { lat: 12.054871111111, lng: 105.162565 },
-        { lat: 11.545833333333, lng: 104.89939333333 },
-        { lat: 11.590175, lng: 104.88211333333 },
-        { lat: 11.599270555556, lng: 104.91861166667 },
-        { lat: 11.896451111111, lng: 106.33732277778 },
-        { lat: 11.462361111111, lng: 104.95522166667 },
-        { lat: 10.489267222222, lng: 104.29446111111 },
-        { lat: 11.596908, lng: 104.914567 },
-        { lat: 11.565896111111, lng: 104.91824166667 },
-        { lat: 10.615309444444, lng: 103.49840388889 },
-      ];
-
       const devices = [];
       let nextId = 1;
 
+      function generateRandomIMEI() {
+        const base = "35513908508";
+        const suffix = Math.floor(Math.random() * 10000)
+          .toString()
+          .padStart(4, "0");
+        return base + suffix;
+      }
+
       async function addCoordinatesFromSingleInput() {
         const coordStr = document.getElementById("coordInput").value.trim();
+        const imeiStr = document.getElementById("imeiInput").value.trim();
 
         const parts = coordStr.split(",").map((s) => s.trim());
 
@@ -109,6 +122,7 @@
 
         devices.push({
           id: nextId++,
+          imei: imeiStr || generateRandomIMEI(),
           lat,
           lng,
           timestamp: new Date().toLocaleString(),
@@ -119,6 +133,7 @@
         document.getElementById("loader").style.display = "none";
 
         document.getElementById("coordInput").value = "";
+        document.getElementById("imeiInput").value = "";
       }
 
       function handleFileUpload() {
@@ -126,10 +141,79 @@
         const file = fileInput.files[0];
 
         if (!file) {
-          alert("Please select an .xlsx file.");
+          alert("Please select a .xlsx or .csv file.");
           return;
         }
 
+        const fileName = file.name.toLowerCase();
+
+        if (fileName.endsWith(".csv")) {
+          handleCSVUpload(file);
+        } else if (fileName.endsWith(".xlsx")) {
+          handleExcelUpload(file);
+        } else {
+          alert("Please select a valid .xlsx or .csv file.");
+        }
+      }
+
+      function handleCSVUpload(file) {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: async function (results) {
+            if (results.errors.length > 0) {
+              console.warn("CSV parsing errors:", results.errors);
+            }
+
+            const coordList = results.data
+              .filter((row) => row["Last connection"] || row["Coordinates"])
+              .map((row) => {
+                const coordStr =
+                  row["Last connection"] || row["Coordinates"] || "";
+                const parts = String(coordStr).split(",");
+                return {
+                  lat: parseFloat(parts[0]),
+                  lng: parseFloat(parts[1]),
+                };
+              });
+
+            document.getElementById("loader").style.display = "block";
+
+            for (const row of results.data) {
+              const coordStr =
+                row["Last connection"] || row["Coordinates"] || "";
+              const parts = String(coordStr).split(",");
+              const lat = parseFloat(parts[0]);
+              const lng = parseFloat(parts[1]);
+
+              if (!isNaN(lat) && !isNaN(lng)) {
+                const result = await getDetailedAddress(lat, lng);
+                devices.push({
+                  id: nextId++,
+                  imei:
+                    row["IMEI"] ||
+                    row["imei"] ||
+                    row["Imei"] ||
+                    generateRandomIMEI(),
+                  lat,
+                  lng,
+                  datastatus: row["datastatus"] || "N/A",
+                  datastatus_description:
+                    row["datastatus_description"] || "N/A",
+                  timestamp: new Date().toLocaleString(),
+                  ...result,
+                });
+              }
+            }
+
+            renderTable();
+            document.getElementById("loader").style.display = "none";
+            document.getElementById("fileUpload").value = "";
+          },
+        });
+      }
+
+      function handleExcelUpload(file) {
         const reader = new FileReader();
         reader.onload = async function (e) {
           const data = new Uint8Array(e.target.result);
@@ -139,9 +223,11 @@
           const json = XLSX.utils.sheet_to_json(worksheet);
 
           const coordList = json
-            .filter((row) => row["Last connection"])
+            .filter((row) => row["Last connection"] || row["Coordinates"])
             .map((row) => {
-              const parts = String(row["Last connection"]).split(",");
+              const coordStr =
+                row["Last connection"] || row["Coordinates"] || "";
+              const parts = String(coordStr).split(",");
               return {
                 lat: parseFloat(parts[0]),
                 lng: parseFloat(parts[1]),
@@ -150,13 +236,25 @@
 
           document.getElementById("loader").style.display = "block";
 
-          for (const coord of coordList) {
-            if (!isNaN(coord.lat) && !isNaN(coord.lng)) {
-              const result = await getDetailedAddress(coord.lat, coord.lng);
+          for (const row of json) {
+            const coordStr = row["Last connection"] || row["Coordinates"] || "";
+            const parts = String(coordStr).split(",");
+            const lat = parseFloat(parts[0]);
+            const lng = parseFloat(parts[1]);
+
+            if (!isNaN(lat) && !isNaN(lng)) {
+              const result = await getDetailedAddress(lat, lng);
               devices.push({
                 id: nextId++,
-                lat: coord.lat,
-                lng: coord.lng,
+                imei:
+                  row["IMEI"] ||
+                  row["imei"] ||
+                  row["Imei"] ||
+                  generateRandomIMEI(),
+                lat,
+                lng,
+                datastatus: row["datastatus"] || "N/A",
+                datastatus_description: row["datastatus_description"] || "N/A",
                 timestamp: new Date().toLocaleString(),
                 ...result,
               });
@@ -165,38 +263,13 @@
 
           renderTable();
           document.getElementById("loader").style.display = "none";
-          fileInput.value = "";
+          document.getElementById("fileUpload").value = "";
         };
 
         reader.readAsArrayBuffer(file);
       }
 
-      async function addAllDevices() {
-        document.getElementById("loader").style.display = "block";
-        devices.length = 0;
-        nextId = 1;
-
-        const addressPromises = mockDevices.map((device) =>
-          getDetailedAddress(device.lat, device.lng)
-        );
-
-        const results = await Promise.all(addressPromises);
-
-        for (let i = 0; i < results.length; i++) {
-          devices.push({
-            id: nextId++,
-            ...mockDevices[i],
-            timestamp: new Date().toLocaleString(),
-            ...results[i],
-          });
-        }
-
-        renderTable();
-        document.getElementById("loader").style.display = "none";
-      }
-
       const khmerToEnglishMap = {
-        // Provinces (ខេត្ត)
         ខេត្តបន្ទាយមានជ័យ: "Banteay Meanchey",
         ខេត្តបាត់ដំបង: "Battambang",
         ខេត្តកំពង់ចាម: "Kampong Cham",
@@ -207,9 +280,7 @@
         ខេត្តកែប: "Kep",
         ខេត្តកោះកុង: "Koh Kong",
         ខេត្តក្រចេះ: "Kratie",
-        ខេត្តកោះកុង: "Koh Kong",
         ខេត្តកំពត: "Kampot",
-        ខេត្តកែប: "Kep",
         ខេត្តព្រះវិហារ: "Preah Vihear",
         ខេត្តពោធិ៍សាត់: "Pursat",
         ខេត្តរតនគីរី: "Ratanakiri",
@@ -219,66 +290,24 @@
         ខេត្តព្រះសីហនុ: "Sihanoukville",
         ខេត្តមណ្ឌលគីរី: "Mondulkiri",
         ខេត្តសែនសុខ: "Stung Treng",
-        ខេត្តព្រះវិហារ: "Preah Vihear",
         ខេត្តឧត្តរមានជ័យ: "Oddar Meanchey",
-        ខេត្តបន្ទាយមានជ័យ: "Banteay Meanchey",
         រាជធានីភ្នំពេញ: "Phnom Penh",
-
-        // Example Districts from Preah Vihear province (only some)
-        ភ្នំដែក: "Phnum Daek",
-        រវៀង: "Rovieng",
-        ស្រុកកោះកុង: "Kaoh Kong District",
-        ស្រុកស្រីស្នាក់: "Srei Snaek",
-        ស្រុកសាមគ្គីមានជ័យ: "Samakki Meanchey",
-
-        // Districts from Kampot
-        ស្រុកកំពង់ត្រាច: "Kampong Trach",
-        ស្រុកកំពង់កណ្ដាល: "Kampong Kandal",
-        ស្រុកគោកក្រឡ: "Kouk Kral",
-
-        // Commune examples (Sangkat / Khum)
-        សង្កាត់ចាក់អង្រែលើ: "Sangkat Chak Angre Leu",
-        សង្កាត់ស្នោ: "Sangkat Snao",
-        ឃុំចំការលើ: "Khum Chamkar Leu",
-
-        // Village examples (Phum)
-        ភូមិថ្មី: "Phum Thmei",
-        ភូមិចាស់: "Phum Chas",
-        ភូមិវត្ដ: "Phum Wat",
-
-        // You can keep adding more here
       };
 
       async function getDetailedAddress(lat, lng) {
         try {
-          if (isNaN(lat) || isNaN(lng)) {
-            return {
-              address: "Invalid coordinates",
-              phum: "",
-              khum: "",
-              srok: "",
-              city: "",
-              status: "Error: Invalid coordinates",
-            };
-          }
-
           const response = await fetch(
             `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&language=en&key=AIzaSyCNLJoByCegi307pESD4Hd3EJ2TIiTwb7M`
           );
           const data = await response.json();
 
-          if (
-            data.status !== "OK" ||
-            !data.results ||
-            data.results.length === 0
-          ) {
+          if (data.status !== "OK" || !data.results.length) {
             return {
-              address: "Address not found",
               phum: "",
               khum: "",
               srok: "",
               city: "",
-              status: `Error: ${data.status || "No result returned"}`,
+              geocodeStatus: `Error: ${data.status}`,
             };
           }
 
@@ -287,13 +316,11 @@
 
           const getComp = (type) => {
             const comp = components.find((c) => c.types.includes(type));
-            if (!comp) return "";
-            return comp.long_name || "";
+            return comp ? comp.long_name : "";
           };
 
           const cityRaw =
             getComp("administrative_area_level_1")
-              .replace(/^(de\s+)/i, "")
               .replace(/Province/i, "")
               .trim() || "N/A";
 
@@ -304,15 +331,7 @@
             getComp("neighborhood") ||
             "N/A";
 
-          if (
-            cityRaw.toLowerCase() === "phnom penh" ||
-            cityRaw.toLowerCase() === "sihanoukville"
-          ) {
-            khumRaw = "N/A";
-          }
-
           return {
-            address: result.formatted_address,
             phum:
               khmerToEnglishMap[
                 getComp("sublocality") || getComp("neighborhood")
@@ -326,17 +345,15 @@
               getComp("administrative_area_level_2") ||
               "N/A",
             city: khmerToEnglishMap[cityRaw] || cityRaw,
-            status: "Success",
+            geocodeStatus: "Success",
           };
         } catch (error) {
-          console.error("Geocode error:", error);
           return {
-            address: "Error",
             phum: "",
             khum: "",
             srok: "",
             city: "",
-            status: `Error: ${error.message || "Fetch failed"}`,
+            geocodeStatus: `Error: ${error.message}`,
           };
         }
       }
@@ -348,66 +365,72 @@
         devices.forEach((dev) => {
           const row = document.createElement("tr");
 
-          if (dev.status !== "Success") {
+          if (dev.geocodeStatus !== "Success") {
             row.classList.add("row-error");
           }
 
           row.innerHTML = `
-            <td>${dev.id}</td>
-            <td>${dev.lat}, ${dev.lng}</td>
-            <td>${dev.phum || "N/A"}</td>
-            <td>${dev.khum || "N/A"}</td>
-            <td>${dev.srok || "N/A"}</td>
-            <td>${dev.city || "N/A"}</td>
-            <td>${dev.address || "N/A"}</td>
-            <td class="${
-              dev.status === "Success" ? "status-success" : "status-error"
-            }">
-              ${dev.status}
-            </td>
-          `;
+  <td>${dev.id}</td>
+  <td>${dev.imei || "N/A"}</td>
+  <td>${dev.lat}, ${dev.lng}</td>
+  <td>${dev.datastatus || "N/A"}</td>
+  <td>${dev.datastatus_description || "N/A"}</td>
+  <td>${dev.phum || "N/A"}</td>
+  <td>${dev.khum || "N/A"}</td>
+  <td>${dev.srok || "N/A"}</td>
+  <td>${dev.city || "N/A"}</td>
+  <td class="${
+    dev.geocodeStatus === "Success" ? "status-success" : "status-error"
+  }">${dev.geocodeStatus}</td>
+`;
 
           tbody.appendChild(row);
         });
       }
 
-      function exportAllToExcel() {
+      function exportAllToCSV() {
         if (devices.length === 0) {
           alert("No device data available.");
           return;
         }
 
-        // Prepare data for Excel
-        const data = [
+        const csvData = [
           [
+            "IMEI",
             "Coordinates",
+            "Data Status",
+            "Data Status Description",
             "Village (Phum)",
             "Commune (Khum)",
             "District (Srok)",
             "City",
-            "Full Address",
-            "Status",
+            "Geocode Status",
             "Timestamp",
           ],
           ...devices.map((d) => [
+            d.imei || "N/A",
             `${d.lat}, ${d.lng}`,
+            d.datastatus || "N/A",
+            d.datastatus_description || "N/A",
             d.phum || "N/A",
             d.khum || "N/A",
             d.srok || "N/A",
             d.city || "N/A",
-            d.address || "N/A",
-            d.status,
+            d.geocodeStatus,
             d.timestamp,
           ]),
         ];
 
-        // Create worksheet and workbook
-        const worksheet = XLSX.utils.aoa_to_sheet(data);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Device Data");
-
-        // Export as .xlsx file
-        XLSX.writeFile(workbook, "device_report.xlsx");
+        const csv = Papa.unparse(csvData);
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", "device_report.csv");
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       }
     </script>
   </body>
