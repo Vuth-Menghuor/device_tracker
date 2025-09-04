@@ -6,6 +6,29 @@ body {
   color: #333;
 }
 
+#loader {
+  display: none;
+  margin-top: 10px;
+}
+.row-error {
+  background-color: #fdd;
+}
+.status-success {
+  color: green;
+}
+.status-error {
+  color: red;
+}
+.status-offline {
+  color: orange;
+}
+.status-online {
+  color: blue;
+}
+#deviceTable {
+  font-size: 12px;
+}
+
 h2 {
   text-align: center;
   color: #2f6fed;

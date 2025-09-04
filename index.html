@@ -3,61 +3,36 @@
   <head>
     <meta charset="UTF-8" />
     <title>Device Location Tracker</title>
+    <style>
+      .info-panel {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #e3f2fd;
+        border-radius: 8px;
+        border-left: 4px solid #2196f3;
+      }
+    </style>
     <link rel="stylesheet" href="style.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-    <style>
-      #loader {
-        display: none;
-        margin-top: 10px;
-      }
-      .row-error {
-        background-color: #fdd;
-      }
-      .status-success {
-        color: green;
-      }
-      .status-error {
-        color: red;
-      }
-      .status-offline {
-        color: orange;
-      }
-      .status-online {
-        color: blue;
-      }
-      #deviceTable {
-        font-size: 12px;
-      }
-    </style>
   </head>
 
   <body>
     <h2>Device GPS Tracker</h2>
 
-    <div>
-      <button onclick="exportAllToCSV()">Export All to CSV</button>
-      <div style="margin-top: 10px">
-        <input
-          type="text"
-          id="coordInput"
-          placeholder="Latitude, Longitude"
-          style="width: 200px"
-        />
-        <input
-          type="text"
-          id="imeiInput"
-          placeholder="IMEI (optional)"
-          style="width: 150px; margin-left: 5px"
-        />
-        <button onclick="addCoordinatesFromSingleInput()">
-          Add Coordinates
-        </button>
-      </div>
+    <div class="info-panel">
+      <strong>Expected CSV format:</strong> imei, coordiates, datastatus,
+      datastatus_description, hearttime, hearttime_unix
+    </div>
+
+    <div class="controls">
       <input type="file" id="fileUpload" accept=".xlsx,.csv" />
       <button onclick="handleFileUpload()">Upload and Convert</button>
+      <button onclick="exportAllToCSV()">Export All to CSV</button>
+      <button onclick="clearData()">Clear All Data</button>
 
-      <div id="loader">Fetching device data...</div>
+      <div id="loader">Processing device data...</div>
+      <div id="status"></div>
     </div>
 
     <table
@@ -74,6 +49,8 @@
           <th>Coordinates</th>
           <th>Data Status</th>
           <th>Data Status Description</th>
+          <th>Hearttime</th>
+          <th>Hearttime Unix</th>
           <th>Village</th>
           <th>Commune</th>
           <th>District</th>
@@ -89,51 +66,8 @@
       const devices = [];
       let nextId = 1;
 
-      function generateRandomIMEI() {
-        const base = "35513908508";
-        const suffix = Math.floor(Math.random() * 10000)
-          .toString()
-          .padStart(4, "0");
-        return base + suffix;
-      }
-
-      async function addCoordinatesFromSingleInput() {
-        const coordStr = document.getElementById("coordInput").value.trim();
-        const imeiStr = document.getElementById("imeiInput").value.trim();
-
-        const parts = coordStr.split(",").map((s) => s.trim());
-
-        if (parts.length !== 2) {
-          alert("Please enter coordinates in 'latitude, longitude' format.");
-          return;
-        }
-
-        const lat = parseFloat(parts[0]);
-        const lng = parseFloat(parts[1]);
-
-        if (isNaN(lat) || isNaN(lng)) {
-          alert("Please enter valid numbers for latitude and longitude.");
-          return;
-        }
-
-        document.getElementById("loader").style.display = "block";
-
-        const result = await getDetailedAddress(lat, lng);
-
-        devices.push({
-          id: nextId++,
-          imei: imeiStr || generateRandomIMEI(),
-          lat,
-          lng,
-          timestamp: new Date().toLocaleString(),
-          ...result,
-        });
-
-        renderTable();
-        document.getElementById("loader").style.display = "none";
-
-        document.getElementById("coordInput").value = "";
-        document.getElementById("imeiInput").value = "";
+      function updateStatus(message) {
+        document.getElementById("status").textContent = message;
       }
 
       function handleFileUpload() {
@@ -160,55 +94,134 @@
         Papa.parse(file, {
           header: true,
           skipEmptyLines: true,
+          dynamicTyping: false, // Keep as strings to preserve formatting
           complete: async function (results) {
             if (results.errors.length > 0) {
               console.warn("CSV parsing errors:", results.errors);
             }
 
-            const coordList = results.data
-              .filter((row) => row["Last connection"] || row["Coordinates"])
-              .map((row) => {
-                const coordStr =
-                  row["Last connection"] || row["Coordinates"] || "";
-                const parts = String(coordStr).split(",");
-                return {
-                  lat: parseFloat(parts[0]),
-                  lng: parseFloat(parts[1]),
-                };
-              });
+            console.log("Parsed CSV data:", results.data);
+            console.log("CSV headers:", results.meta.fields);
 
             document.getElementById("loader").style.display = "block";
+            updateStatus("Processing coordinates...");
+
+            let processedCount = 0;
+            let errorCount = 0;
 
             for (const row of results.data) {
-              const coordStr =
-                row["Last connection"] || row["Coordinates"] || "";
-              const parts = String(coordStr).split(",");
-              const lat = parseFloat(parts[0]);
-              const lng = parseFloat(parts[1]);
+              // Handle different possible column names and trim whitespace
+              const imei = (row["imei"] || row["IMEI"] || row["Imei"] || "")
+                .toString()
+                .trim();
+              const lastConnection = (
+                row["Last connection"] ||
+                row["last connection"] ||
+                row["Coordinates"] ||
+                row["coordinates"] ||
+                ""
+              )
+                .toString()
+                .trim();
+              const datastatus = (row["datastatus"] || row["Data Status"] || "")
+                .toString()
+                .trim();
+              const datastatusDescription = (
+                row["datastatus_description"] ||
+                row["Data Status Description"] ||
+                ""
+              )
+                .toString()
+                .trim();
+              const hearttime = (row["hearttime"] || row["Hearttime"] || "")
+                .toString()
+                .trim();
+              const hearttimeUnix = (
+                row["hearttime_unix"] ||
+                row["Hearttime Unix"] ||
+                row["hearttime_unix"] ||
+                ""
+              )
+                .toString()
+                .trim();
 
-              if (!isNaN(lat) && !isNaN(lng)) {
+              console.log("Processing row:", {
+                imei,
+                lastConnection,
+                datastatus,
+                datastatusDescription,
+                hearttime,
+                hearttimeUnix,
+              });
+
+              if (!lastConnection) {
+                console.warn("No coordinates found for IMEI:", imei);
+                errorCount++;
+                continue;
+              }
+
+              // Parse coordinates
+              const parts = lastConnection.split(",");
+              if (parts.length !== 2) {
+                console.warn(
+                  "Invalid coordinate format for IMEI:",
+                  imei,
+                  "Coordinates:",
+                  lastConnection
+                );
+                errorCount++;
+                continue;
+              }
+
+              const lat = parseFloat(parts[0].trim());
+              const lng = parseFloat(parts[1].trim());
+
+              if (isNaN(lat) || isNaN(lng)) {
+                console.warn(
+                  "Invalid coordinates for IMEI:",
+                  imei,
+                  "Lat:",
+                  lat,
+                  "Lng:",
+                  lng
+                );
+                errorCount++;
+                continue;
+              }
+
+              try {
                 const result = await getDetailedAddress(lat, lng);
                 devices.push({
                   id: nextId++,
-                  imei:
-                    row["IMEI"] ||
-                    row["imei"] ||
-                    row["Imei"] ||
-                    generateRandomIMEI(),
+                  imei: imei || "N/A",
                   lat,
                   lng,
-                  datastatus: row["datastatus"] || "N/A",
-                  datastatus_description:
-                    row["datastatus_description"] || "N/A",
+                  datastatus: datastatus || "N/A",
+                  datastatus_description: datastatusDescription || "N/A",
+                  hearttime: hearttime || "N/A",
+                  hearttime_unix: hearttimeUnix || "N/A",
                   timestamp: new Date().toLocaleString(),
                   ...result,
                 });
+                processedCount++;
+                updateStatus(`Processed ${processedCount} devices...`);
+              } catch (error) {
+                console.error("Error processing device:", imei, error);
+                errorCount++;
               }
             }
 
             renderTable();
             document.getElementById("loader").style.display = "none";
+            updateStatus(
+              `Completed: ${processedCount} devices processed, ${errorCount} errors`
+            );
             document.getElementById("fileUpload").value = "";
+          },
+          error: function (error) {
+            console.error("CSV parsing error:", error);
+            document.getElementById("loader").style.display = "none";
+            updateStatus("Error parsing CSV file");
           },
         });
       }
@@ -216,54 +229,112 @@
       function handleExcelUpload(file) {
         const reader = new FileReader();
         reader.onload = async function (e) {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: "array" });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          const json = XLSX.utils.sheet_to_json(worksheet);
+          try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: "array" });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
 
-          const coordList = json
-            .filter((row) => row["Last connection"] || row["Coordinates"])
-            .map((row) => {
-              const coordStr =
-                row["Last connection"] || row["Coordinates"] || "";
-              const parts = String(coordStr).split(",");
-              return {
-                lat: parseFloat(parts[0]),
-                lng: parseFloat(parts[1]),
-              };
-            });
+            console.log("Parsed Excel data:", json);
 
-          document.getElementById("loader").style.display = "block";
+            document.getElementById("loader").style.display = "block";
+            updateStatus("Processing coordinates...");
 
-          for (const row of json) {
-            const coordStr = row["Last connection"] || row["Coordinates"] || "";
-            const parts = String(coordStr).split(",");
-            const lat = parseFloat(parts[0]);
-            const lng = parseFloat(parts[1]);
+            let processedCount = 0;
+            let errorCount = 0;
 
-            if (!isNaN(lat) && !isNaN(lng)) {
-              const result = await getDetailedAddress(lat, lng);
-              devices.push({
-                id: nextId++,
-                imei:
-                  row["IMEI"] ||
-                  row["imei"] ||
-                  row["Imei"] ||
-                  generateRandomIMEI(),
-                lat,
-                lng,
-                datastatus: row["datastatus"] || "N/A",
-                datastatus_description: row["datastatus_description"] || "N/A",
-                timestamp: new Date().toLocaleString(),
-                ...result,
-              });
+            for (const row of json) {
+              // Handle different possible column names and convert to string
+              const imei = (row["imei"] || row["IMEI"] || row["Imei"] || "")
+                .toString()
+                .trim();
+              const lastConnection = (
+                row["Last connection"] ||
+                row["last connection"] ||
+                row["Coordinates"] ||
+                row["coordinates"] ||
+                ""
+              )
+                .toString()
+                .trim();
+              const datastatus = (row["datastatus"] || row["Data Status"] || "")
+                .toString()
+                .trim();
+              const datastatusDescription = (
+                row["datastatus_description"] ||
+                row["Data Status Description"] ||
+                ""
+              )
+                .toString()
+                .trim();
+              const hearttime = (row["hearttime"] || row["Hearttime"] || "")
+                .toString()
+                .trim();
+              const hearttimeUnix = (
+                row["hearttime_unix"] ||
+                row["Hearttime Unix"] ||
+                row["hearttime_unix"] ||
+                ""
+              )
+                .toString()
+                .trim();
+
+              if (!lastConnection) {
+                console.warn("No coordinates found for IMEI:", imei);
+                errorCount++;
+                continue;
+              }
+
+              const parts = lastConnection.split(",");
+              if (parts.length !== 2) {
+                console.warn("Invalid coordinate format for IMEI:", imei);
+                errorCount++;
+                continue;
+              }
+
+              const lat = parseFloat(parts[0].trim());
+              const lng = parseFloat(parts[1].trim());
+
+              if (isNaN(lat) || isNaN(lng)) {
+                console.warn("Invalid coordinates for IMEI:", imei);
+                errorCount++;
+                continue;
+              }
+
+              try {
+                const result = await getDetailedAddress(lat, lng);
+                devices.push({
+                  id: nextId++,
+                  imei: imei || "N/A",
+                  lat,
+                  lng,
+                  datastatus: datastatus || "N/A",
+                  datastatus_description: datastatusDescription || "N/A",
+                  hearttime: hearttime || "N/A",
+                  hearttime_unix: hearttimeUnix || "N/A",
+                  timestamp: new Date().toLocaleString(),
+                  ...result,
+                });
+                processedCount++;
+                updateStatus(`Processed ${processedCount} devices...`);
+              } catch (error) {
+                console.error("Error processing device:", imei, error);
+                errorCount++;
+              }
             }
-          }
 
-          renderTable();
-          document.getElementById("loader").style.display = "none";
-          document.getElementById("fileUpload").value = "";
+            renderTable();
+            document.getElementById("loader").style.display = "none";
+            updateStatus(
+              `Completed: ${processedCount} devices processed, ${errorCount} errors`
+            );
+            document.getElementById("fileUpload").value = "";
+          } catch (error) {
+            console.error("Excel parsing error:", error);
+            document.getElementById("loader").style.display = "none";
+            updateStatus("Error parsing Excel file");
+          }
         };
 
         reader.readAsArrayBuffer(file);
@@ -332,13 +403,7 @@
             "N/A";
 
           return {
-            phum:
-              khmerToEnglishMap[
-                getComp("sublocality") || getComp("neighborhood")
-              ] ||
-              getComp("sublocality") ||
-              getComp("neighborhood") ||
-              "N/A",
+            phum: getComp("sublocality") || getComp("neighborhood") || "N/A",
             khum: khmerToEnglishMap[khumRaw] || khumRaw,
             srok:
               khmerToEnglishMap[getComp("administrative_area_level_2")] ||
@@ -370,22 +435,26 @@
           }
 
           row.innerHTML = `
-  <td>${dev.id}</td>
-  <td>${dev.imei || "N/A"}</td>
-  <td>${dev.lat}, ${dev.lng}</td>
-  <td>${dev.datastatus || "N/A"}</td>
-  <td>${dev.datastatus_description || "N/A"}</td>
-  <td>${dev.phum || "N/A"}</td>
-  <td>${dev.khum || "N/A"}</td>
-  <td>${dev.srok || "N/A"}</td>
-  <td>${dev.city || "N/A"}</td>
-  <td class="${
-    dev.geocodeStatus === "Success" ? "status-success" : "status-error"
-  }">${dev.geocodeStatus}</td>
-`;
+        <td>${dev.id}</td>
+        <td>${dev.imei || "N/A"}</td>
+        <td>${dev.lat}, ${dev.lng}</td>
+        <td>${dev.datastatus || "N/A"}</td>
+        <td>${dev.datastatus_description || "N/A"}</td>
+        <td>${dev.hearttime || "N/A"}</td>
+        <td>${dev.hearttime_unix || "N/A"}</td>
+        <td>${dev.phum || "N/A"}</td>
+        <td>${dev.khum || "N/A"}</td>
+        <td>${dev.srok || "N/A"}</td>
+        <td>${dev.city || "N/A"}</td>
+        <td class="${
+          dev.geocodeStatus === "Success" ? "status-success" : "status-error"
+        }">${dev.geocodeStatus}</td>
+      `;
 
           tbody.appendChild(row);
         });
+
+        updateStatus(`Displaying ${devices.length} devices`);
       }
 
       function exportAllToCSV() {
@@ -400,6 +469,8 @@
             "Coordinates",
             "Data Status",
             "Data Status Description",
+            "Hearttime",
+            "Hearttime Unix",
             "Village (Phum)",
             "Commune (Khum)",
             "District (Srok)",
@@ -412,6 +483,8 @@
             `${d.lat}, ${d.lng}`,
             d.datastatus || "N/A",
             d.datastatus_description || "N/A",
+            d.hearttime || "N/A",
+            d.hearttime_unix || "N/A",
             d.phum || "N/A",
             d.khum || "N/A",
             d.srok || "N/A",
@@ -426,11 +499,30 @@
         const link = document.createElement("a");
         const url = URL.createObjectURL(blob);
         link.setAttribute("href", url);
-        link.setAttribute("download", "device_report.csv");
+        link.setAttribute(
+          "download",
+          `device_report_${new Date().toISOString().split("T")[0]}.csv`
+        );
         link.style.visibility = "hidden";
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+
+        updateStatus("CSV export completed");
+      }
+
+      function clearData() {
+        if (devices.length === 0) {
+          alert("No data to clear.");
+          return;
+        }
+
+        if (confirm("Are you sure you want to clear all device data?")) {
+          devices.length = 0;
+          nextId = 1;
+          renderTable();
+          updateStatus("All data cleared");
+        }
       }
     </script>
   </body>
